@@ -140,6 +140,14 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 
 	switch parts[0] {
 
+	case "help":
+		var msg string
+		for _, v := range p.Help(bot, service, true) {
+			msg += v + "\n"
+		}
+		service.SendMessage(message.Channel(), msg)
+		break
+
 	case "info":
 		if p.playing == nil {
 			service.SendMessage(message.Channel(), "Not playing anything right now.")
