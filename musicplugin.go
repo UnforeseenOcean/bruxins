@@ -29,6 +29,9 @@ type MusicPlugin struct {
 }
 
 type config struct {
+	GuildID         string
+	VoiceChannelID  string
+	TextChannelID   string
 	DeleteAfterPlay bool
 	Announce        string
 }
@@ -57,6 +60,7 @@ func New(discord *bruxism.Discord) bruxism.Plugin {
 
 	p := &MusicPlugin{
 		discord: discord,
+		config:  config{},
 	}
 
 	return p
@@ -69,12 +73,24 @@ func (p *MusicPlugin) Name() string {
 
 // Load will load plugin state from a byte array.
 func (p *MusicPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []byte) error {
+
+	if data != nil {
+		if err := json.Unmarshal(data, &p.config); err != nil {
+			log.Println("Error loading data", err)
+		}
+	}
+
+	if p.config.VoiceChannelID != "" {
+		// TODO uncomment/test below after bruxism Load changes
+		//		p.join(p.config.VoiceChannelID)
+		//		p.gostart(service)
+	}
 	return nil
 }
 
 // Save will save plugin state to a byte array.
 func (p *MusicPlugin) Save() ([]byte, error) {
-	return nil, nil
+	return json.Marshal(p.config)
 }
 
 // Help returns a list of help strings that are printed when the user requests them.
@@ -168,24 +184,12 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			return
 		}
 
-		c, err := p.discord.Session.Channel(parts[1])
+		err := p.join(parts[1])
 		if err != nil {
-			service.SendMessage(message.Channel(), "That doesn't seem to be a valid channel.")
-			return
+			service.SendMessage(message.Channel(), err.Error())
+			break
 		}
 
-		if c.Type != "voice" {
-			service.SendMessage(message.Channel(), "That's not a voice channel.")
-			return
-		}
-
-		gid := c.GuildID
-		cid := c.ID
-		err = p.discord.Session.ChannelVoiceJoin(gid, cid, false, false)
-		if err != nil {
-			service.SendMessage(message.Channel(), "Sorry, there was an error joining the channel.")
-			return
-		}
 		service.SendMessage(message.Channel(), "Now, let's play some music!")
 		break
 
@@ -510,4 +514,27 @@ func (p *MusicPlugin) gostart(service bruxism.Service) {
 	p.control = make(chan controlMessage)
 
 	go p.start(p.close, p.control, service)
+}
+
+func (p *MusicPlugin) join(cid string) (err error) {
+
+	c, err := p.discord.Session.Channel(cid)
+	if err != nil {
+		return fmt.Errorf("That doesn't seem to be a valid channel.")
+	}
+
+	if c.Type != "voice" {
+		return fmt.Errorf("That's not a voice channel.")
+	}
+
+	gid := c.GuildID
+	err = p.discord.Session.ChannelVoiceJoin(gid, cid, false, false)
+	if err != nil {
+		return fmt.Errorf("Sorry, there was an error joining the channel.")
+	}
+
+	p.config.GuildID = gid
+	p.config.VoiceChannelID = cid
+
+	return
 }
