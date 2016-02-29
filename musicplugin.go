@@ -56,7 +56,7 @@ type song struct {
 }
 
 // New will create a new music plugin.
-func NewMusicPlugin(discord *bruxism.Discord) bruxism.Plugin {
+func New(discord *bruxism.Discord) bruxism.Plugin {
 
 	p := &musicPlugin{
 		SimplePlugin: *bruxism.NewSimplePlugin("Music"),
