@@ -21,8 +21,6 @@ type musicPlugin struct {
 	bruxism.SimplePlugin
 	sync.Mutex
 
-	log map[string][]bruxism.Message
-
 	discord *bruxism.Discord
 	playing *song
 	queue   []song
@@ -60,7 +58,6 @@ func New(discord *bruxism.Discord) bruxism.Plugin {
 
 	p := &musicPlugin{
 		SimplePlugin: *bruxism.NewSimplePlugin("Music"),
-		log:          make(map[string][]bruxism.Message),
 		discord:      discord,
 	}
 	p.HelpFunc = p.helpFunc
