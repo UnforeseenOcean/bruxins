@@ -335,11 +335,15 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		p.queue = append(p.queue[:i], p.queue[i+1:]...)
 
 		// Advance i for next loop
-		if i+2 > len(p.queue) {
-			i = 0
-		} else {
-			i++
-		}
+		// TODO wrap in if DeleteAfterPlay {} block.
+		/*
+			// only needed if we're not deleting songs.
+				if i+2 > len(p.queue) {
+					i = 0
+				} else {
+					i++
+				}
+		*/
 	}
 }
 
