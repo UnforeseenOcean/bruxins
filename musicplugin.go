@@ -17,15 +17,14 @@ import (
 	"github.com/iopred/discordgo"
 )
 
-type musicPlugin struct {
-	bruxism.SimplePlugin
+type MusicPlugin struct {
 	sync.Mutex
 
 	discord *bruxism.Discord
 	playing *song
 	queue   []song
 	close   chan struct{}
-	control chan ControlMessage
+	control chan controlMessage
 	config  config
 }
 
@@ -34,10 +33,10 @@ type config struct {
 	Announce        string
 }
 
-type ControlMessage int
+type controlMessage int
 
 const (
-	Skip ControlMessage = iota
+	Skip controlMessage = iota
 	Pause
 	Resume
 )
@@ -56,17 +55,30 @@ type song struct {
 // New will create a new music plugin.
 func New(discord *bruxism.Discord) bruxism.Plugin {
 
-	p := &musicPlugin{
-		SimplePlugin: *bruxism.NewSimplePlugin("Music"),
-		discord:      discord,
+	p := &MusicPlugin{
+		discord: discord,
 	}
-	p.HelpFunc = p.helpFunc
-	p.MessageFunc = p.messageFunc
 
 	return p
 }
 
-func (p *musicPlugin) helpFunc(bot *bruxism.Bot, service bruxism.Service, detailed bool) []string {
+// Name returns the name of the plugin.
+func (p *MusicPlugin) Name() string {
+	return "Music"
+}
+
+// Load will load plugin state from a byte array.
+func (p *MusicPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []byte) error {
+	return nil
+}
+
+// Save will save plugin state to a byte array.
+func (p *MusicPlugin) Save() ([]byte, error) {
+	return nil, nil
+}
+
+// Help returns a list of help strings that are printed when the user requests them.
+func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, detailed bool) []string {
 
 	help := []string{
 		bruxism.CommandHelp(service, "music", "[command]", "Muisc Plugin, see `help music`")[0],
@@ -105,7 +117,8 @@ func (p *musicPlugin) helpFunc(bot *bruxism.Bot, service bruxism.Service, detail
 	return help
 }
 
-func (p *musicPlugin) messageFunc(bot *bruxism.Bot, service bruxism.Service, message bruxism.Message) {
+// Message handler.
+func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message bruxism.Message) {
 
 	if service.IsMe(message) {
 		return
@@ -280,7 +293,7 @@ func getSongJSON(url string) (st song, err error) {
 	return
 }
 
-func (p *musicPlugin) start(closechan <-chan struct{}, control <-chan ControlMessage, service bruxism.Service) {
+func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMessage, service bruxism.Service) {
 
 	if closechan == nil || control == nil {
 		return
@@ -330,7 +343,7 @@ func (p *musicPlugin) start(closechan <-chan struct{}, control <-chan ControlMes
 	}
 }
 
-func (p *musicPlugin) playSong(close <-chan struct{}, control <-chan ControlMessage, s song, v *discordgo.Voice) {
+func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMessage, s song, v *discordgo.Voice) {
 
 	var err error
 
@@ -475,14 +488,14 @@ func (p *musicPlugin) playSong(close <-chan struct{}, control <-chan ControlMess
 	}
 }
 
-func (p *musicPlugin) gostart(service bruxism.Service) {
+func (p *MusicPlugin) gostart(service bruxism.Service) {
 
 	if p.close != nil || p.control != nil {
 		return
 	}
 
 	p.close = make(chan struct{})
-	p.control = make(chan ControlMessage)
+	p.control = make(chan controlMessage)
 
 	go p.start(p.close, p.control, service)
 }
