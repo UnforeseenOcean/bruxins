@@ -52,7 +52,7 @@ type song struct {
 	Thumbnail   string `json:"thumbnail"`
 	URL         string `json:"webpage_url"`
 	Duration    int    `json:"duration"`
-	TimeLeft    int
+	Remaining   int
 }
 
 // New will create a new music plugin.
@@ -143,9 +143,6 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		return
 	}
 
-	p.Lock()
-	defer p.Unlock()
-
 	_, parts := bruxism.ParseCommand(service, message)
 
 	if len(parts) == 0 {
@@ -165,7 +162,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 
 	case "info":
 
-		msg := fmt.Sprintf("`Bruxism MusicPlugin`\n")
+		msg := fmt.Sprintf("`Bruxism MusicPlugin:`\n")
 		msg += fmt.Sprintf("`Guild:` %s\n", p.config.GuildID)
 		msg += fmt.Sprintf("`Voice Channel:` %s\n", p.config.VoiceChannelID)
 		msg += fmt.Sprintf("`Announce Channel:` %s\n", p.config.TextChannelID)
@@ -175,11 +172,11 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			break
 		}
 
-		msg += fmt.Sprintf("`Now Playing`\n", p.playing.ID)
+		msg += fmt.Sprintf("`Now Playing:`\n")
 		msg += fmt.Sprintf("`ID:` %s\n", p.playing.ID)
 		msg += fmt.Sprintf("`Title:` %s\n", p.playing.Title)
 		msg += fmt.Sprintf("`Duration:` %ds\n", p.playing.Duration)
-		msg += fmt.Sprintf("`TimeLeft:` %ds\n", p.playing.TimeLeft)
+		msg += fmt.Sprintf("`Remaining:` %ds\n", p.playing.Remaining)
 		msg += fmt.Sprintf("`Source URL:` <%s>\n", p.playing.URL)
 		msg += fmt.Sprintf("`Thumbnail:` %s\n", p.playing.Thumbnail)
 		service.SendMessage(message.Channel(), msg)
@@ -208,20 +205,14 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 
 	case "play":
 
-		for _, v := range parts[1:] {
-			fmt.Println("Parse ", v)
+		p.gostart(service) // start queue player, if not running.
 
+		for _, v := range parts[1:] {
 			url, err := url.Parse(v) // doesn't check much..
 			if err != nil {
 				continue
 			}
-			s, err := getSongJSON(url.String())
-			if err != nil {
-				continue
-			}
-
-			p.queue = append(p.queue, s)
-			p.gostart(service) // start queue player, if not running.
+			p.queueURL(url.String())
 		}
 		break
 
@@ -295,20 +286,38 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 	}
 }
 
-func getSongJSON(url string) (st song, err error) {
+func (p *MusicPlugin) queueURL(url string) (err error) {
 
-	output, err := exec.Command("./youtube-dl", "-j", "--youtube-skip-dash-manifest", url).CombinedOutput()
+	cmd := exec.Command("./youtube-dl", "-j", "--youtube-skip-dash-manifest", url)
+	cmd.Stderr = os.Stderr
+
+	output, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	err = json.Unmarshal(output, &st)
+	err = cmd.Start()
 	if err != nil {
 		log.Println(err)
 		return
 	}
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	}()
 
+	scanner := bufio.NewScanner(output)
+
+	for scanner.Scan() {
+		s := song{}
+		err = json.Unmarshal(scanner.Bytes(), &s)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		p.queue = append(p.queue, s)
+	}
 	return
 }
 
@@ -360,11 +369,9 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		}
 
 		// Get song to play and store it in local Song var
-		p.Lock()
 		if len(p.queue)-1 >= i {
 			Song = p.queue[i]
 		}
-		p.Unlock()
 
 		p.playing = &Song
 		p.playSong(closechan, control, Song, p.discord.Session.Voice)
@@ -395,7 +402,7 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 	}
 
 	fmt.Println("Now playing : ", s.ID, s.URL)
-	ytdl := exec.Command("./youtube-dl", "-f", "bestaudio", "-o", "-", s.URL)
+	ytdl := exec.Command("./youtube-dl", "-v", "-f", "bestaudio", "-o", "-", s.URL)
 	ytdl.Stderr = os.Stderr
 
 	ffmpeg := exec.Command("ffmpeg", "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
@@ -527,7 +534,7 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 		// Send received PCM to the sendPCM channel
 		v.OpusSend <- opus
 
-		s.TimeLeft = (p.playing.Duration - int(time.Since(start).Seconds()))
+		p.playing.Remaining = (p.playing.Duration - int(time.Since(start).Seconds()))
 	}
 }
 
