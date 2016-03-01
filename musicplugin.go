@@ -164,12 +164,19 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		break
 
 	case "info":
+
+		msg := fmt.Sprintf("`Bruxism MusicPlugin`\n")
+		msg += fmt.Sprintf("`Guild:` %s\n", p.config.GuildID)
+		msg += fmt.Sprintf("`Voice Channel:` %s\n", p.config.VoiceChannelID)
+		msg += fmt.Sprintf("`Announce Channel:` %s\n", p.config.TextChannelID)
+
 		if p.playing == nil {
-			service.SendMessage(message.Channel(), "Not playing anything right now.")
+			service.SendMessage(message.Channel(), msg)
 			break
 		}
 
-		msg := fmt.Sprintf("`ID:` %s\n", p.playing.ID)
+		msg := fmt.Sprintf("`Now Playing`\n", p.playing.ID)
+		msg += fmt.Sprintf("`ID:` %s\n", p.playing.ID)
 		msg += fmt.Sprintf("`Title:` %s\n", p.playing.Title)
 		msg += fmt.Sprintf("`Duration:` %ds\n", p.playing.Duration)
 		msg += fmt.Sprintf("`TimeLeft:` %ds\n", p.playing.TimeLeft)
