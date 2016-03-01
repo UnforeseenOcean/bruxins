@@ -175,7 +175,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			break
 		}
 
-		msg := fmt.Sprintf("`Now Playing`\n", p.playing.ID)
+		msg += fmt.Sprintf("`Now Playing`\n", p.playing.ID)
 		msg += fmt.Sprintf("`ID:` %s\n", p.playing.ID)
 		msg += fmt.Sprintf("`Title:` %s\n", p.playing.Title)
 		msg += fmt.Sprintf("`Duration:` %ds\n", p.playing.Duration)
