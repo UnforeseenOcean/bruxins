@@ -22,10 +22,10 @@ type MusicPlugin struct {
 
 	discord *bruxism.Discord
 	playing *song
-	queue   []song
 	close   chan struct{}
 	control chan controlMessage
 	config  config
+	queue   []song
 }
 
 type config struct {
@@ -340,32 +340,16 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		default:
 		}
 
-		// if discord isn't ready, we just sit simi-idle here.
-		// if the queue is empty, we just sit simi-idle here
-		// TODO: Improve this whole block..
-		for {
-
+		// idle loop until Discord voice is ready
+		if p.discord == nil || p.discord.Session == nil || p.discord.Session.Voice == nil || p.discord.Session.Voice.Ready == false {
 			time.Sleep(1 * time.Second)
+			continue
+		}
 
-			if p.discord == nil {
-				continue
-			}
-
-			if p.discord.Session == nil {
-				continue
-			}
-
-			if p.discord.Session.Voice == nil {
-				continue
-			}
-
-			if p.discord.Session.Voice.Ready == false {
-				continue
-			}
-
-			if len(p.queue) > 0 {
-				break
-			}
+		// idle loop if queue is empty.
+		if len(p.queue) < 1 {
+			time.Sleep(1 * time.Second)
+			continue
 		}
 
 		// Get song to play and store it in local Song var
