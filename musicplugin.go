@@ -166,6 +166,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 	case "info":
 		if p.playing == nil {
 			service.SendMessage(message.Channel(), "Not playing anything right now.")
+			break
 		}
 
 		msg := fmt.Sprintf("`ID:` %s\n", p.playing.ID)
