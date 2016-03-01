@@ -81,9 +81,8 @@ func (p *MusicPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []byt
 	}
 
 	if p.config.VoiceChannelID != "" {
-		// TODO uncomment/test below after bruxism Load changes
-		//		p.join(p.config.VoiceChannelID)
-		//		p.gostart(service)
+		go p.join(p.config.VoiceChannelID)
+		go p.gostart(service)
 	}
 	return nil
 }
@@ -324,12 +323,32 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		default:
 		}
 
+		// if discord isn't ready, we just sit simi-idle here.
 		// if the queue is empty, we just sit simi-idle here
+		// TODO: Improve this whole block..
 		for {
+
+			time.Sleep(1 * time.Second)
+
+			if p.discord == nil {
+				continue
+			}
+
+			if p.discord.Session == nil {
+				continue
+			}
+
+			if p.discord.Session.Voice == nil {
+				continue
+			}
+
+			if p.discord.Session.Voice.Ready == false {
+				continue
+			}
+
 			if len(p.queue) > 0 {
 				break
 			}
-			time.Sleep(1 * time.Second)
 		}
 
 		// Get song to play and store it in local Song var
@@ -517,6 +536,15 @@ func (p *MusicPlugin) gostart(service bruxism.Service) {
 }
 
 func (p *MusicPlugin) join(cid string) (err error) {
+
+	// this is temp code, until Bruxism Load changes
+	for {
+		if p.discord != nil && p.discord.Session != nil && p.discord.Session.DataReady == true {
+			break
+		}
+		log.Println("loop")
+		time.Sleep(1 * time.Second)
+	}
 
 	c, err := p.discord.Session.Channel(cid)
 	if err != nil {
