@@ -288,7 +288,9 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		break
 
 	case "clear":
+		p.Lock()
 		p.Queue = []song{}
+		p.Unlock()
 		break
 
 	case "debug":
@@ -331,7 +333,9 @@ func (p *MusicPlugin) queueURL(url string) (err error) {
 			log.Println(err)
 			continue
 		}
+		p.Lock()
 		p.Queue = append(p.Queue, s)
+		p.Unlock()
 	}
 	return
 }
@@ -368,9 +372,14 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		}
 
 		// Get song to play and store it in local Song var
+		p.Lock()
 		if len(p.Queue)-1 >= i {
 			Song = p.Queue[i]
+		} else {
+			i = 0
+			continue
 		}
+		p.Unlock()
 
 		p.playing = &Song
 		p.playSong(closechan, control, Song, p.discord.Session.Voice)
@@ -383,7 +392,11 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 				i++
 			}
 		} else {
-			p.Queue = append(p.Queue[:i], p.Queue[i+1:]...)
+			p.Lock()
+			if len(p.Queue) > 0 {
+				p.Queue = append(p.Queue[:i], p.Queue[i+1:]...)
+			}
+			p.Unlock()
 		}
 	}
 }
