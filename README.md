@@ -14,9 +14,9 @@ This code is in very early stages and is still a bit messy.
 
 * NOTE: All commands must be prefixed with a @mention of your bot
 
-| Command         | Arguments                        | Action
-| --------------- | -------------------------------- | ------------------- 
-| **mu**sic join  | [<channel ID>|<channel name>]    | Join the provided channel or if no channel is provided then join the last channel that was used.   
+| Command             | Arguments                        | Action
+| ------------------- | -------------------------------- | ------------------- 
+| **mu**sic **join**  | `[<channel ID>|<channel name>]`  | Join the provided channel or if no channel is provided then join the last channel that was used.   
 
 
 ### Notes
