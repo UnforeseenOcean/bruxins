@@ -10,13 +10,14 @@ This code is in very early stages and is still a bit messy.
 * [youtube-dl](https://github.com/rg3/youtube-dl) must be installed and exist in the same folder as bruxism.
 * [dca](https://github.com/bwmarrin/dca) must be installed and exist in the same folder as bruxism.
 
-### Commands
+### Music Plugin Commands
 
 * NOTE: All commands must be prefixed with a @mention of your bot
+* NOTE: `music` can be abbreviated with just `mu`
 
 | Command             | Arguments                        | Action
 | ------------------- | -------------------------------- | ------------------- 
-| **mu**sic **join**  | `[<channel ID>|<channel name>]`  | Join the provided channel or if no channel is provided then join the last channel that was used.   
+| **mu**sic **join**  | `[<channel_ID>|<channel_name>]`  | Join the provided channel or if no channel is provided then join the last channel that was used.   
 
 
 ### Notes
