@@ -24,16 +24,15 @@ type MusicPlugin struct {
 	playing *song
 	close   chan struct{}
 	control chan controlMessage
-	config  config
-	queue   []song
-}
 
-type config struct {
-	GuildID         string
-	VoiceChannelID  string
-	TextChannelID   string
-	DeleteAfterPlay bool
-	Announce        string
+	// Saved Settings
+	Queue          []song
+	GuildID        string
+	VoiceChannelID string
+	TextChannelID  string
+	LoopQueue      bool
+	Announce       string
+	MaxQueueSize   int
 }
 
 type controlMessage int
@@ -60,7 +59,6 @@ func New(discord *bruxism.Discord) bruxism.Plugin {
 
 	p := &MusicPlugin{
 		discord: discord,
-		config:  config{},
 	}
 
 	return p
@@ -75,13 +73,13 @@ func (p *MusicPlugin) Name() string {
 func (p *MusicPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []byte) error {
 
 	if data != nil {
-		if err := json.Unmarshal(data, &p.config); err != nil {
+		if err := json.Unmarshal(data, p); err != nil {
 			log.Println("Error loading data", err)
 		}
 	}
 
-	if p.config.VoiceChannelID != "" {
-		go p.join(p.config.VoiceChannelID)
+	if p.VoiceChannelID != "" {
+		go p.join(p.VoiceChannelID)
 		go p.gostart(service)
 	}
 	return nil
@@ -89,7 +87,7 @@ func (p *MusicPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []byt
 
 // Save will save plugin state to a byte array.
 func (p *MusicPlugin) Save() ([]byte, error) {
-	return json.Marshal(p.config)
+	return json.Marshal(p)
 }
 
 // Help returns a list of help strings that are printed when the user requests them.
@@ -107,6 +105,7 @@ func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, detailed b
 		help = append(help, []string{
 			"Examples:",
 			fmt.Sprintf("%s%smusic join <channelid>%s - Join the provided voice channel.", ticks, service.CommandPrefix(), ticks),
+			fmt.Sprintf("%s%smusic loop%s - Toggle queue loop.", ticks, service.CommandPrefix(), ticks),
 			fmt.Sprintf("%s%smusic leave%s - Leave voice channel.", ticks, service.CommandPrefix(), ticks),
 			fmt.Sprintf("%s%smusic info%s - Display information about the music plugin.", ticks, service.CommandPrefix(), ticks),
 			fmt.Sprintf("%s%smusic start%s - start playing music from queue", ticks, service.CommandPrefix(), ticks),
@@ -160,12 +159,18 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		service.SendMessage(message.Channel(), msg)
 		break
 
+	case "loop":
+		p.LoopQueue = !p.LoopQueue
+		service.SendMessage(message.Channel(), fmt.Sprintf("Queue loop set to %v", p.LoopQueue))
+		break
+
 	case "info":
 
 		msg := fmt.Sprintf("`Bruxism MusicPlugin:`\n")
-		msg += fmt.Sprintf("`Guild:` %s\n", p.config.GuildID)
-		msg += fmt.Sprintf("`Voice Channel:` %s\n", p.config.VoiceChannelID)
-		msg += fmt.Sprintf("`Announce Channel:` %s\n", p.config.TextChannelID)
+		msg += fmt.Sprintf("`Guild:` %s\n", p.GuildID)
+		msg += fmt.Sprintf("`Voice Channel:` %s\n", p.VoiceChannelID)
+		msg += fmt.Sprintf("`Announce Channel:` %s\n", p.TextChannelID)
+		msg += fmt.Sprintf("`Loop Queue:` %v\n", p.LoopQueue)
 
 		if p.playing == nil {
 			service.SendMessage(message.Channel(), msg)
@@ -219,12 +224,21 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 	case "list":
 		var msg string
 
-		for k, v := range p.queue {
+		i := 1
+		for k, v := range p.Queue {
 			if v == *p.playing {
 				msg += fmt.Sprintf("`%d : %s` %s **(Now Playing)**\n", k, v.ID, v.Title)
 			} else {
 				msg += fmt.Sprintf("`%d : %s` %s\n", k, v.ID, v.Title)
 			}
+
+			if i >= 15 {
+				service.SendMessage(message.Channel(), msg)
+				msg = ""
+				i = 0
+			}
+
+			i++
 		}
 
 		if msg == "" {
@@ -274,7 +288,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		break
 
 	case "clear":
-		p.queue = []song{}
+		p.Queue = []song{}
 		break
 
 	case "debug":
@@ -288,7 +302,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 
 func (p *MusicPlugin) queueURL(url string) (err error) {
 
-	cmd := exec.Command("./youtube-dl", "-j", "--youtube-skip-dash-manifest", url)
+	cmd := exec.Command("./youtube-dl", "-i", "-j", "--youtube-skip-dash-manifest", url)
 	cmd.Stderr = os.Stderr
 
 	output, err := cmd.StdoutPipe()
@@ -310,13 +324,14 @@ func (p *MusicPlugin) queueURL(url string) (err error) {
 	scanner := bufio.NewScanner(output)
 
 	for scanner.Scan() {
+		log.Println("QUEUE: ", scanner.Text)
 		s := song{}
 		err = json.Unmarshal(scanner.Bytes(), &s)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
-		p.queue = append(p.queue, s)
+		p.Queue = append(p.Queue, s)
 	}
 	return
 }
@@ -347,33 +362,29 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		}
 
 		// idle loop if queue is empty.
-		if len(p.queue) < 1 {
+		if len(p.Queue) < 1 {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
 		// Get song to play and store it in local Song var
-		if len(p.queue)-1 >= i {
-			Song = p.queue[i]
+		if len(p.Queue)-1 >= i {
+			Song = p.Queue[i]
 		}
 
 		p.playing = &Song
 		p.playSong(closechan, control, Song, p.discord.Session.Voice)
 		p.playing = nil
 
-		// TODO wrap in if DeleteAfterPlay {} block.
-		p.queue = append(p.queue[:i], p.queue[i+1:]...)
-
-		// Advance i for next loop
-		// TODO wrap in if DeleteAfterPlay {} block.
-		/*
-			// only needed if we're not deleting songs.
-				if i+2 > len(p.queue) {
-					i = 0
-				} else {
-					i++
-				}
-		*/
+		if p.LoopQueue {
+			if i+2 > len(p.Queue) {
+				i = 0
+			} else {
+				i++
+			}
+		} else {
+			p.Queue = append(p.Queue[:i], p.Queue[i+1:]...)
+		}
 	}
 }
 
@@ -381,37 +392,41 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 
 	var err error
 
-	if close == nil || v == nil {
+	if close == nil || v == nil || control == nil {
 		return
 	}
 
-	fmt.Println("Now playing : ", s.ID, s.URL)
 	ytdl := exec.Command("./youtube-dl", "-v", "-f", "bestaudio", "-o", "-", s.URL)
 	ytdl.Stderr = os.Stderr
+	ytdlout, err := ytdl.StdoutPipe()
+	if err != nil {
+		fmt.Println("ytdl StdoutPipe Error:", err)
+		return
+	}
+	ytdlbuf := bufio.NewReaderSize(ytdlout, 16384)
 
 	ffmpeg := exec.Command("ffmpeg", "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1")
+	ffmpeg.Stdin = ytdlbuf
 	ffmpeg.Stderr = os.Stderr
-
-	ffmpeg.Stdin, err = ytdl.StdoutPipe()
+	ffmpegout, err := ffmpeg.StdoutPipe()
 	if err != nil {
-		fmt.Println("ffmpeg: ", err)
+		fmt.Println("ffmpeg StdoutPipe Error:", err)
+		return
 	}
+	ffmpegbuf := bufio.NewReaderSize(ffmpegout, 16384)
 
 	dca := exec.Command("./dca", "-i", "pipe:0")
+	dca.Stdin = ffmpegbuf
 	dca.Stderr = os.Stderr
-
-	dca.Stdin, err = ffmpeg.StdoutPipe()
 	if err != nil {
 		fmt.Println("ffmpeg: ", err)
 	}
-
 	dcaout, err := dca.StdoutPipe()
 	if err != nil {
 		fmt.Println("StdoutPipe Error:", err)
 		return
 	}
-
-	bufr := bufio.NewReaderSize(dcaout, 38400)
+	dcabuf := bufio.NewReaderSize(dcaout, 16384)
 
 	err = ytdl.Start()
 	if err != nil {
@@ -419,8 +434,7 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 		return
 	}
 	defer func() {
-		ytdl.Process.Kill()
-		ytdl.Wait()
+		go ytdl.Wait()
 	}()
 
 	err = ffmpeg.Start()
@@ -429,8 +443,7 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 		return
 	}
 	defer func() {
-		ffmpeg.Process.Kill()
-		ffmpeg.Wait()
+		go ffmpeg.Wait()
 	}()
 
 	err = dca.Start()
@@ -439,9 +452,11 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 		return
 	}
 	defer func() {
-		dca.Process.Kill()
-		dca.Wait()
+		go dca.Wait()
 	}()
+
+	// small delay here to give buffers time to fill up a little
+	// helps avoid bad sound at the start
 
 	// header "buffer"
 	var opuslen uint16
@@ -494,8 +509,15 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 		default:
 		}
 
+		// TODO: Learn enough to know if this is needed.
+		// doing this seems to keep the dcabuf buffer
+		// full.  If not doing this, the dca buffer
+		// frequently drops below 200 and often hits 0
+		// which can lead to poor audio quality.
+		_, _ = dcabuf.Peek(10000)
+
 		// read dca opus length header
-		err = binary.Read(bufr, binary.LittleEndian, &opuslen)
+		err = binary.Read(dcabuf, binary.LittleEndian, &opuslen)
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			return
 		}
@@ -506,7 +528,7 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 
 		// read opus data from dca
 		opus := make([]byte, opuslen)
-		err = binary.Read(bufr, binary.LittleEndian, &opus)
+		err = binary.Read(dcabuf, binary.LittleEndian, &opus)
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			return
 		}
@@ -560,8 +582,8 @@ func (p *MusicPlugin) join(cid string) (err error) {
 		return fmt.Errorf("Sorry, there was an error joining the channel.")
 	}
 
-	p.config.GuildID = gid
-	p.config.VoiceChannelID = cid
+	p.GuildID = gid
+	p.VoiceChannelID = cid
 
 	return
 }
