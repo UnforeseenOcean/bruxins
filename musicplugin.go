@@ -468,9 +468,6 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 		go dca.Wait()
 	}()
 
-	// small delay here to give buffers time to fill up a little
-	// helps avoid bad sound at the start
-
 	// header "buffer"
 	var opuslen uint16
 
@@ -521,13 +518,6 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 			}
 		default:
 		}
-
-		// TODO: Learn enough to know if this is needed.
-		// doing this seems to keep the dcabuf buffer
-		// full.  If not doing this, the dca buffer
-		// frequently drops below 200 and often hits 0
-		// which can lead to poor audio quality.
-		_, _ = dcabuf.Peek(10000)
 
 		// read dca opus length header
 		err = binary.Read(dcabuf, binary.LittleEndian, &opuslen)
