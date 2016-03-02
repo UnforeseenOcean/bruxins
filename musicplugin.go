@@ -558,12 +558,11 @@ func (p *MusicPlugin) gostart(service bruxism.Service) {
 
 func (p *MusicPlugin) join(cid string) (err error) {
 
-	// this is temp code, until Bruxism Load changes
+	// idle loop until Discord is ready.
 	for {
 		if p.discord != nil && p.discord.Session != nil && p.discord.Session.DataReady == true {
 			break
 		}
-		log.Println("loop")
 		time.Sleep(1 * time.Second)
 	}
 
