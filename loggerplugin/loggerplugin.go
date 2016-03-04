@@ -22,8 +22,8 @@ import (
 	"log"
 	"sync"
 
+	_ "github.com/bwmarrin/go-sqlite3"
 	"github.com/iopred/bruxism"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type LoggerPlugin struct {
