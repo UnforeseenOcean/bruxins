@@ -60,11 +60,7 @@ func (p *LoggerPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []by
 	// connect to the database
 	p.db, err = sql.Open("sqlite3", "./logger.db")
 
-	s := `
-		CREATE TABLE IF NOT EXISTS message (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			json TEXT
-		);`
+	s := `CREATE TABLE IF NOT EXISTS message (json);`
 
 	// prepare the db, if not already done.
 	stmt, err := p.db.Prepare(s)
@@ -77,18 +73,6 @@ func (p *LoggerPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []by
 		log.Println(err)
 	}
 
-	s = `CREATE VIRTUAL TABLE IF NOT EXISTS mfts USING fts5(message);`
-
-	// prepare the db, if not already done.
-	stmt, err = p.db.Prepare(s)
-	if err != nil {
-		log.Println(err)
-	}
-
-	_, err = stmt.Exec()
-	if err != nil {
-		log.Println(err)
-	}
 	return nil
 }
 
@@ -140,23 +124,4 @@ func (p *LoggerPlugin) Message(bot *bruxism.Bot, service bruxism.Service, messag
 	if err != nil {
 		log.Println(err)
 	}
-
-	s = `INSERT INTO mfts (message) VALUES(json(?));`
-
-	// prepare the db, if not already done.
-	stmt, err = p.db.Prepare(s)
-	if err != nil {
-		log.Println(err)
-	}
-
-	data, err = json.Marshal(message)
-	if err != nil {
-		log.Println(err)
-	}
-
-	_, err = stmt.Exec(data)
-	if err != nil {
-		log.Println(err)
-	}
-
 }
