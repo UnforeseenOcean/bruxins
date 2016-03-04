@@ -134,6 +134,8 @@ func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, detailed b
 // Message handler.
 func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message bruxism.Message) {
 
+	defer bruxism.MessageRecover()
+
 	if service.IsMe(message) {
 		return
 	}
@@ -221,12 +223,18 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		}
 		break
 
+	case "lock":
+		p.Lock()
+		service.SendMessage(message.Channel(), "Locked")
+		p.Unlock()
+		service.SendMessage(message.Channel(), "Unlocked")
+
 	case "list":
 		var msg string
 
 		i := 1
 		for k, v := range p.Queue {
-			if v == *p.playing {
+			if p.playing != nil && *p.playing == v {
 				msg += fmt.Sprintf("`%d : %s` %s **(Now Playing)**\n", k, v.ID, v.Title)
 			} else {
 				msg += fmt.Sprintf("`%d : %s` %s\n", k, v.ID, v.Title)
