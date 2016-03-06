@@ -162,7 +162,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 	switch parts[0] {
 
 	case "help":
-		service.SendMessage(message.Channel(), strings.Join(p.Help(bot, service, message, true), ","))
+		service.SendMessage(message.Channel(), strings.Join(p.Help(bot, service, message, true), "\n"))
 		break
 
 	case "loop":
