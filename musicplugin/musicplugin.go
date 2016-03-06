@@ -440,7 +440,7 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 	}
 	ffmpegbuf := bufio.NewReaderSize(ffmpegout, 16384)
 
-	dca := exec.Command("./dca", "-i", "pipe:0")
+	dca := exec.Command("./dca", "-raw", "-i", "pipe:0")
 	dca.Stdin = ffmpegbuf
 	dca.Stderr = os.Stderr
 	if err != nil {
@@ -481,7 +481,7 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 	}()
 
 	// header "buffer"
-	var opuslen uint16
+	var opuslen int16
 
 	// Send "speaking" packet over the voice websocket
 	v.Speaking(true)
