@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,10 +92,17 @@ func (p *MusicPlugin) Save() ([]byte, error) {
 }
 
 // Help returns a list of help strings that are printed when the user requests them.
-func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, detailed bool) []string {
+func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, message bruxism.Message, detailed bool) []string {
+
+	// Discord currently only supports one voice channel, only show in help for the current guild.
+	c, err := p.discord.Session.State.Channel(message.Channel())
+	fmt.Println(err, c)
+	if err != nil || c.GuildID != p.GuildID {
+		return nil
+	}
 
 	help := []string{
-		bruxism.CommandHelp(service, "music", "[command]", "Muisc Plugin, see `help music`")[0],
+		bruxism.CommandHelp(service, "music", "[command]", "Music Plugin, see `help music`")[0],
 	}
 
 	if detailed {
@@ -154,11 +162,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 	switch parts[0] {
 
 	case "help":
-		var msg string
-		for _, v := range p.Help(bot, service, true) {
-			msg += v + "\n"
-		}
-		service.SendMessage(message.Channel(), msg)
+		service.SendMessage(message.Channel(), strings.Join(p.Help(bot, service, message, true), "\n"))
 		break
 
 	case "loop":
@@ -568,14 +572,6 @@ func (p *MusicPlugin) gostart(service bruxism.Service) {
 }
 
 func (p *MusicPlugin) join(cid string) (err error) {
-
-	// idle loop until Discord is ready.
-	for {
-		if p.discord != nil && p.discord.Session != nil && p.discord.Session.DataReady == true {
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
 
 	c, err := p.discord.Session.Channel(cid)
 	if err != nil {
