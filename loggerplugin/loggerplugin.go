@@ -84,6 +84,8 @@ func (p *LoggerPlugin) Save() ([]byte, error) {
 // Help returns a list of help strings that are printed when the user requests them.
 func (p *LoggerPlugin) Help(bot *bruxism.Bot, service bruxism.Service, detailed bool) []string {
 
+	return []string{}
+
 	help := []string{
 		bruxism.CommandHelp(service, "log", "[command]", "Logger Plugin, see `help log`")[0],
 	}
