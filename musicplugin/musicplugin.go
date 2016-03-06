@@ -96,8 +96,12 @@ func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, message br
 
 	// Discord currently only supports one voice channel, only show in help for the current guild.
 	c, err := p.discord.Session.State.Channel(message.Channel())
-	fmt.Println(err, c)
-	if err != nil || c.GuildID != p.GuildID {
+	if err != nil {
+		log.Println("musicplugin error fetching channel : ", err.Error())
+		return nil
+	}
+
+	if c.GuildID != p.GuildID {
 		return nil
 	}
 
