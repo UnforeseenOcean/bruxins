@@ -82,7 +82,7 @@ func (p *LoggerPlugin) Save() ([]byte, error) {
 }
 
 // Help returns a list of help strings that are printed when the user requests them.
-func (p *LoggerPlugin) Help(bot *bruxism.Bot, service bruxism.Service, detailed bool) []string {
+func (p *LoggerPlugin) Help(bot *bruxism.Bot, service bruxism.Service, message bruxism.Message, detailed bool) []string {
 
 	return []string{}
 
