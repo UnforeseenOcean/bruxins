@@ -1,4 +1,4 @@
-package musicplugin
+package playedplugin
 
 import (
 	"encoding/json"
