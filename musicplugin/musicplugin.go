@@ -102,6 +102,7 @@ func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, message br
 
 	// Discord currently only supports one voice channel, only show in help for the current guild.
 	c, err := p.discord.Session.State.Channel(message.Channel())
+
 	if err != nil {
 		log.Println("musicplugin error fetching channel : ", err.Error())
 		return nil
@@ -175,12 +176,10 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 
 	case "help":
 		service.SendMessage(message.Channel(), strings.Join(p.Help(bot, service, message, true), "\n"))
-		break
 
 	case "loop":
 		p.LoopQueue = !p.LoopQueue
 		service.SendMessage(message.Channel(), fmt.Sprintf("Queue loop set to %v", p.LoopQueue))
-		break
 
 	case "info":
 
@@ -209,22 +208,36 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		msg += fmt.Sprintf("`Source URL:` <%s>\n", p.playing.URL)
 		msg += fmt.Sprintf("`Thumbnail:` %s\n", p.playing.Thumbnail)
 		service.SendMessage(message.Channel(), msg)
-		break
 
 	case "join":
-		if len(parts) < 2 {
-			service.SendMessage(message.Channel(), "What channel do you want me to join? Try `help music`")
-			return
+		channelID := ""
+		if len(parts) > 1 {
+			channelID = parts[1]
 		}
 
-		p.voice, err = p.join(parts[1])
+		if channelID == "" {
+			messageUserID := message.UserID()
+			for _, g := range p.discord.Session.State.Guilds {
+				for _, v := range g.VoiceStates {
+					if v.UserID == messageUserID {
+						channelID = v.ChannelID
+					}
+				}
+			}
+
+			if channelID == "" {
+				service.SendMessage(message.Channel(), "I couldn't find you in any voice channels, please join one.")
+				return
+			}
+		}
+
+		err := p.join(channelID)
 		if err != nil {
 			service.SendMessage(message.Channel(), err.Error())
 			break
 		}
 
 		service.SendMessage(message.Channel(), "Now, let's play some music!")
-		break
 
 	case "leave":
 		if p.voice == nil {
@@ -233,7 +246,6 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			p.voice.Close()
 			service.SendMessage(message.Channel(), "Left voice channel.")
 		}
-		break
 
 	case "play":
 
@@ -246,7 +258,6 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			}
 			p.queueURL(url.String())
 		}
-		break
 
 	case "lock":
 		p.Lock()
@@ -280,11 +291,9 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		}
 
 		service.SendMessage(message.Channel(), msg)
-		break
 
 	case "start":
 		p.gostart(service) // start queue player, if not running.
-		break
 
 	case "stop":
 		if p.close == nil || p.control == nil {
@@ -297,38 +306,31 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		close(p.control)
 		p.control = nil
 
-		break
-
 	case "skip":
 		if p.control == nil {
 			return
 		}
 		p.control <- Skip
-		break
 
 	case "pause":
 		if p.control == nil {
 			return
 		}
 		p.control <- Pause
-		break
 
 	case "resume":
 		if p.control == nil {
 			return
 		}
 		p.control <- Resume
-		break
 
 	case "clear":
 		p.Lock()
 		p.Queue = []song{}
 		p.Unlock()
-		break
 
 	case "debug":
 		//p.discord.Session.Voice.Debug = !p.discord.Session.Voice.Debug
-		break
 
 	default:
 		service.SendMessage(message.Channel(), "Unknown music command, try `help music`")
