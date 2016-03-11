@@ -22,6 +22,7 @@ type MusicPlugin struct {
 	sync.Mutex
 
 	discord *bruxism.Discord
+	voice   *discordgo.VoiceConnection
 	playing *song
 	close   chan struct{}
 	control chan controlMessage
@@ -71,18 +72,23 @@ func (p *MusicPlugin) Name() string {
 }
 
 // Load will load plugin state from a byte array.
-func (p *MusicPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []byte) error {
+func (p *MusicPlugin) Load(bot *bruxism.Bot, service bruxism.Service, data []byte) (err error) {
 
 	if data != nil {
-		if err := json.Unmarshal(data, p); err != nil {
+		if err = json.Unmarshal(data, p); err != nil {
 			log.Println("Error loading data", err)
 		}
 	}
 
 	if p.VoiceChannelID != "" {
-		go p.join(p.VoiceChannelID)
-		go p.gostart(service)
+		p.voice, err = p.join(p.VoiceChannelID)
+		if err != nil {
+			log.Println("musicplugin: voice join err ", err)
+			return
+		}
+		p.gostart(service)
 	}
+
 	return nil
 }
 
@@ -146,6 +152,8 @@ func (p *MusicPlugin) Help(bot *bruxism.Bot, service bruxism.Service, message br
 // Message handler.
 func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message bruxism.Message) {
 
+	var err error
+
 	defer bruxism.MessageRecover()
 
 	if service.IsMe(message) {
@@ -176,6 +184,12 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 
 	case "info":
 
+		// temp loop to print out all voice connections
+		for _, v := range p.discord.Session.VoiceConnections {
+			log.Println("VoiceConnections:", v.GuildID, v.ChannelID)
+
+		}
+
 		msg := fmt.Sprintf("`Bruxism MusicPlugin:`\n")
 		msg += fmt.Sprintf("`Guild:` %s\n", p.GuildID)
 		msg += fmt.Sprintf("`Voice Channel:` %s\n", p.VoiceChannelID)
@@ -203,7 +217,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			return
 		}
 
-		err := p.join(parts[1])
+		p.voice, err = p.join(parts[1])
 		if err != nil {
 			service.SendMessage(message.Channel(), err.Error())
 			break
@@ -213,9 +227,12 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		break
 
 	case "leave":
-		// TODO: Can we have a check to see if we're in any voice channels?
-		p.discord.Session.ChannelVoiceLeave()
-		service.SendMessage(message.Channel(), "Left any joined voice channels.")
+		if p.voice == nil {
+			service.SendMessage(message.Channel(), "Not in a voice channel.")
+		} else {
+			p.voice.Close()
+			service.SendMessage(message.Channel(), "Left voice channel.")
+		}
 		break
 
 	case "play":
@@ -257,7 +274,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			i++
 		}
 
-		if msg == "" {
+		if len(p.Queue) == 0 {
 			service.SendMessage(message.Channel(), "The music queue is empty.")
 			break
 		}
@@ -310,7 +327,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 		break
 
 	case "debug":
-		p.discord.Session.Voice.Debug = !p.discord.Session.Voice.Debug
+		//p.discord.Session.Voice.Debug = !p.discord.Session.Voice.Debug
 		break
 
 	default:
@@ -356,14 +373,43 @@ func (p *MusicPlugin) queueURL(url string) (err error) {
 	return
 }
 
-func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMessage, service bruxism.Service) {
+// little wrapper function for start() to fire it off in a
+// go routine
+func (p *MusicPlugin) gostart(service bruxism.Service) {
 
-	if closechan == nil || control == nil {
+	if p.close != nil || p.control != nil {
+		log.Println("Got start exited due to nil vars")
+		return
+	}
+
+	p.close = make(chan struct{})
+	p.control = make(chan controlMessage)
+
+	// wait for voice to be ready.
+	// TODO: revise..
+	for {
+		if p.voice != nil {
+			p.voice.WaitUntilConnected()
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	go p.start(p.voice, p.close, p.control, service)
+}
+
+// "start" is a goroutine function that loops though the music queue and
+// plays songs as they are added
+func (p *MusicPlugin) start(dgv *discordgo.VoiceConnection, closechan <-chan struct{}, control <-chan controlMessage, service bruxism.Service) {
+
+	if closechan == nil || control == nil || dgv == nil {
+		log.Println("start() exited due to nil channels")
 		return
 	}
 
 	var i int
 	var Song song
+	var err error
 
 	// main loop keeps this going until close
 	for {
@@ -375,13 +421,7 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		default:
 		}
 
-		// idle loop until Discord voice is ready
-		if p.discord == nil || p.discord.Session == nil || p.discord.Session.Voice == nil || p.discord.Session.Voice.Ready == false {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// idle loop if queue is empty.
+		// idle loop until songs are in the queue to play
 		if len(p.Queue) < 1 {
 			time.Sleep(1 * time.Second)
 			continue
@@ -397,8 +437,14 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 		}
 		p.Unlock()
 
+		// make sure we're connected before we start the player
+		err = dgv.WaitUntilConnected()
+		if err != nil {
+			log.Println("WaitUntilConnected err", err)
+			continue
+		}
 		p.playing = &Song
-		p.playSong(closechan, control, Song, p.discord.Session.Voice)
+		p.playSong(dgv, closechan, control, Song)
 		p.playing = nil
 
 		if p.LoopQueue {
@@ -417,11 +463,13 @@ func (p *MusicPlugin) start(closechan <-chan struct{}, control <-chan controlMes
 	}
 }
 
-func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMessage, s song, v *discordgo.Voice) {
+// play an individual song
+func (p *MusicPlugin) playSong(dgv *discordgo.VoiceConnection, close <-chan struct{}, control <-chan controlMessage, s song) {
 
 	var err error
 
-	if close == nil || v == nil || control == nil {
+	if close == nil || control == nil || dgv == nil {
+		log.Println("playSong exited because close/control/dgv is nil.")
 		return
 	}
 
@@ -488,10 +536,10 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 	var opuslen int16
 
 	// Send "speaking" packet over the voice websocket
-	v.Speaking(true)
+	dgv.Speaking(true)
 
 	// Send not "speaking" packet over the websocket when we finish
-	defer v.Speaking(false)
+	defer dgv.Speaking(false)
 	// exit if close channel is closed
 
 	start := time.Now()
@@ -557,41 +605,34 @@ func (p *MusicPlugin) playSong(close <-chan struct{}, control <-chan controlMess
 		}
 
 		// Send received PCM to the sendPCM channel
-		v.OpusSend <- opus
+		dgv.OpusSend <- opus
+		// TODO: Add a select and timeout to above
+		// shouldn't ever block longer than maybe 18-25ms
 
 		p.playing.Remaining = (p.playing.Duration - int(time.Since(start).Seconds()))
 	}
 }
 
-func (p *MusicPlugin) gostart(service bruxism.Service) {
-
-	if p.close != nil || p.control != nil {
-		return
-	}
-
-	p.close = make(chan struct{})
-	p.control = make(chan controlMessage)
-
-	go p.start(p.close, p.control, service)
-}
-
-func (p *MusicPlugin) join(cid string) (err error) {
+// join a specific voice channel
+func (p *MusicPlugin) join(cid string) (dgv *discordgo.VoiceConnection, err error) {
 
 	c, err := p.discord.Session.Channel(cid)
 	if err != nil {
-		return fmt.Errorf("That doesn't seem to be a valid channel.")
+		return
 	}
 
 	if c.Type != "voice" {
-		return fmt.Errorf("That's not a voice channel.")
+		err = fmt.Errorf("That's not a voice channel.")
+		return
 	}
 
 	gid := c.GuildID
-	err = p.discord.Session.ChannelVoiceJoin(gid, cid, false, false)
+	dgv, err = p.discord.Session.ChannelVoiceJoin(gid, cid, false, false, 100)
 	if err != nil {
-		return fmt.Errorf("Sorry, there was an error joining the channel.")
+		return
 	}
 
+	// TODO needs revised for multivoice
 	p.GuildID = gid
 	p.VoiceChannelID = cid
 
