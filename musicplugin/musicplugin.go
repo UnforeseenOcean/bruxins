@@ -231,7 +231,7 @@ func (p *MusicPlugin) Message(bot *bruxism.Bot, service bruxism.Service, message
 			}
 		}
 
-		err := p.join(channelID)
+		p.voice, err = p.join(channelID)
 		if err != nil {
 			service.SendMessage(message.Channel(), err.Error())
 			break
